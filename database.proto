@@ -1,0 +1,16 @@
+// python -m grpc_tools.protoc -I. --python_out=. --grpc_python_out=. database.proto
+
+syntax = "proto3";
+
+service database {
+    // Query the database
+    rpc queryDatabase (databaseRequest) returns (databaseResponse) {}
+}
+
+message databaseRequest {
+    string query = 1;
+}
+
+message databaseResponse {
+    bytes db_response = 1;
+}
