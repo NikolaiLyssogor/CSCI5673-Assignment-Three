@@ -7,7 +7,7 @@
 # from spyne.server.wsgi import WsgiApplication
 # from spyne.protocol.soap.soap11 import Soap11
 
-
+import start_servers as startup
 from spyne import Application, rpc, ServiceBase, String, ByteArray, Integer
 
 from spyne.protocol.soap import Soap11
@@ -87,21 +87,27 @@ def init_database():
         """)
         con.commit()
 
-if __name__ == "__main__":
+
+def serve(config=None):
     init_database()
 
     logging.basicConfig(level=logging.DEBUG)
     logging.getLogger('spyne.protocol.xml').setLevel(logging.DEBUG)
 
     app = Application([TransactionsDBService], 'spyne.csci.transactions.http',
-        in_protocol=Soap11(validator='lxml'),
-        out_protocol=Soap11(),
-    )
+                      in_protocol=Soap11(validator='lxml'),
+                      out_protocol=Soap11(),
+                      )
 
     wsgi_app = WsgiApplication(app)
+    # server = make_server(config.host, config.port, wsgi_app)
     server = make_server('127.0.0.1', 8000, wsgi_app)
 
-    print("listening to http://127.0.0.1:8000") 
-    print("wsdl is at: http://localhost:8000/?wsdl")
+    print("listening to http://{}:{}".format(config.host, config.port))
+    print("wsdl is at: http://{}:{}/?wsdl".format(config.host, config.port))
 
     server.serve_forever()
+
+
+if __name__ == "__main__":
+    serve(startup.getConfig().transactionsDB)

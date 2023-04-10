@@ -1,3 +1,5 @@
+import start_servers as startup
+
 import grpc
 import database_pb2
 import database_pb2_grpc
@@ -403,7 +405,8 @@ def change_item_price():
         else:
             response = json.dumps({'status': 'Items price updated successfully'})
             return Response(response=response, status=200)
-        
+
+
 def query_database(sql: str, db: str):
     """
     Sends a query over gRPC to the database and returns 
@@ -418,6 +421,7 @@ def query_database(sql: str, db: str):
     db_response = stub.queryDatabase(request=query)
     return pickle.loads(db_response.db_response)
 
+
 @app.route('/getServerInfo', methods=['GET'])
 def get_server_info():
     global n_ops
@@ -428,7 +432,10 @@ def get_server_info():
     })
     return Response(response=response, status=200)
 
-    
+
+def serve(config=None):
+    app.run(host=config.host, port=config.port, debug=True, use_reloader=False)
+
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True, use_reloader=False)
+    serve(startup.getConfig().sellerServer)

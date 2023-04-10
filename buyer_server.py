@@ -1,3 +1,5 @@
+import start_servers as startup
+
 import grpc
 import database_pb2
 import database_pb2_grpc
@@ -12,16 +14,24 @@ from zeep import Client
 
 # Define Flask service
 app = Flask(__name__)
-# Stub for communicating with customer database
-customer_channel = grpc.insecure_channel('localhost:50051')
-customer_stub = database_pb2_grpc.databaseStub(customer_channel)
-# Stub for communicating with product database
-product_channel = grpc.insecure_channel('localhost:50052')
-product_stub = database_pb2_grpc.databaseStub(product_channel)
-# Stub for communicating with the SOAP transactions database
-soap_client = Client('http://localhost:8000/?wsdl')
 # Used for tracking throughput
 n_ops = 0
+
+def setConfig(config):
+    # Stub for communicating with customer database
+    global customer_channel
+    global customer_stub
+    # Stub for communicating with product database
+    global product_channel
+    global product_stub
+    # Stub for communicating with the SOAP transactions database
+    global soap_client
+
+    customer_channel = grpc.insecure_channel("{}:{}".format(config.customerDB.host, config.customerDB.port))
+    customer_stub = database_pb2_grpc.databaseStub(customer_channel)
+    product_channel = grpc.insecure_channel("{}:{}".format(config.productDB.host, config.productDB.port))
+    product_stub = database_pb2_grpc.databaseStub(product_channel)
+    soap_client = Client('http://{}:{}/?wsdl'.format(config.transactionsDB.addr, config.transactionsDB.port))
 
 
 @app.route('/createAccount', methods=['POST'])
@@ -421,7 +431,11 @@ def get_server_info():
         'n_ops': n_ops
     })
     return Response(response=response, status=200)
-    
+
+def serve(config=None):
+    app.run(host=config.host, port=config.port, debug=True, use_reloader=False)
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5001, debug=True, use_reloader=False)
+    config = startup.getConfig()
+    setConfig(config)
+    serve(config.buyerServer)

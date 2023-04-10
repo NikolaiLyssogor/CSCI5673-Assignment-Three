@@ -1,3 +1,5 @@
+import start_servers as startup
+
 # gRPC-related dependencies
 import grpc
 import database_pb2_grpc
@@ -57,10 +59,13 @@ class productDBServicer(database_pb2_grpc.databaseServicer):
                 return database_pb2.databaseResponse(db_response=serv_resp)
 
 
-if __name__ == "__main__":
+def serve(config=None):
     # Start the server
     server = grpc.server(ThreadPoolExecutor(max_workers=10))
     database_pb2_grpc.add_databaseServicer_to_server(productDBServicer(), server)
-    server.add_insecure_port('[::]:50052')
+    server.add_insecure_port('{}:{}'.format(config.host, config.port))
     server.start()
     server.wait_for_termination()
+
+if __name__ == "__main__":
+    serve(startup.getConfig().productDB)
