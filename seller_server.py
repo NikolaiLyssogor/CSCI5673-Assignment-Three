@@ -7,18 +7,30 @@ import database_pb2_grpc
 import pickle
 import json
 import time
+import random
 from flask import Flask, request, Response
 
 # Define Flask service
 app = Flask(__name__)
-# Stub for communicating with customer database
-customer_channel = grpc.insecure_channel('localhost:50051')
-customer_stub = database_pb2_grpc.databaseStub(customer_channel)
-# Stub for communicating with product database
-product_channel = grpc.insecure_channel('localhost:50052')
-product_stub = database_pb2_grpc.databaseStub(product_channel)
 # Used for tracking throughput
 n_ops = 0
+
+
+def setConfig(config):
+    # Stub for communicating with customer database
+    global customer_stubs
+    # Stub for communicating with product database
+    global product_stub
+
+    for customerServer in config.customerDB.ports:
+        host = config.customerDB.hosts[customerServer]
+        port = config.customerDB.ports[customerServer]
+        customer_channel = grpc.insecure_channel("{}:{}".format(host, port))
+        customer_stub = database_pb2_grpc.databaseStub(customer_channel)
+        customer_stubs.append(customer_stub)
+    product_channel = grpc.insecure_channel("{}:{}".format(config.productDB.host, config.productDB.port))
+    product_stub = database_pb2_grpc.databaseStub(product_channel)
+
 
 @app.route('/createAccount', methods=['POST'])
 def createAccount():
@@ -413,13 +425,19 @@ def query_database(sql: str, db: str):
     the object that the database returns.
     """
     if db == 'product':
-        stub = product_stub
+        query = database_pb2.databaseRequest(query=sql)
+        db_response = product_stub.queryDatabase(request=query)
+        return pickle.loads(db_response.db_response)
     elif db == 'customer':
-        stub = customer_stub
+        query = database_pb2.databaseRequest(query=sql)
+        # TODO handle failure
+        stub = random.choice(customer_stubs)
+        db_response = stub.executeClientRequest(request=query)
+        return pickle.loads(db_response.db_response)
 
-    query = database_pb2.databaseRequest(query=sql)
-    db_response = stub.queryDatabase(request=query)
-    return pickle.loads(db_response.db_response)
+    # TODO error
+    print("ERROR")
+    return None
 
 
 @app.route('/getServerInfo', methods=['GET'])
@@ -438,4 +456,6 @@ def serve(config=None):
 
 
 if __name__ == "__main__":
-    serve(startup.getConfig().sellerServer)
+    config = startup.getConfig()
+    setConfig(config)
+    serve(config.sellerServer)

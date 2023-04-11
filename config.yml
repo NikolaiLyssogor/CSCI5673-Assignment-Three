@@ -1,19 +1,19 @@
 buyerServer:
   host: "0.0.0.0"
-  port: 5001
+  port: 3001
 sellerServer:
   host: "0.0.0.0"
-  port: 5000
+  port: 3000
 customerDB:
   localHost: "[::]"
   ports: [50051, 50052, 50053, 50054, 50055]
   hosts: ["[::]", "[::]", "[::]", "[::]", "[::]"]
-  groupPorts: [50056, 50057, 50058, 50059]
+  groupPorts: [50056, 50057, 50058, 50059, 50060]
   groupHosts: ["0.0.0.0", "0.0.0.0", "0.0.0.0", "0.0.0.0", "0.0.0.0"]
   maxThreads: 10
 productDB:
   host: "[::]"
-  port: 50060
+  port: 50061
 transactionsDB:
   addr: "localhost"
   host: "127.0.0.1"

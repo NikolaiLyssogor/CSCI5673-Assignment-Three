@@ -18,6 +18,7 @@ app = Flask(__name__)
 # Used for tracking throughput
 n_ops = 0
 
+
 def setConfig(config):
     # Stub for communicating with customer database
     global customer_stubs
@@ -415,16 +416,20 @@ def query_database(sql: str, db: str):
     if db == 'transaction':
         db_response = soap_client.service.query_database(sql)
         return pickle.loads(db_response)
-    else:
-        if db == 'product':
-            stub = product_stub
-        elif db == 'customer':
-            # TODO handle failure
-            stub = random.choice(customer_stubs)
-
+    elif db == 'product':
         query = database_pb2.databaseRequest(query=sql)
-        db_response = stub.queryDatabase(request=query)
+        db_response = product_stub.queryDatabase(request=query)
         return pickle.loads(db_response.db_response)
+    elif db == 'customer':
+        query = database_pb2.databaseRequest(query=sql)
+        # TODO handle failure
+        stub = random.choice(customer_stubs)
+        db_response = stub.executeClientRequest(request=query)
+        return pickle.loads(db_response.db_response)
+
+    # TODO error
+    print("ERROR")
+    return None
 
 @app.route('/getServerInfo', methods=['GET'])
 def get_server_info():

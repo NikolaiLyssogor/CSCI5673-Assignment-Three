@@ -225,7 +225,7 @@ class customerDB:
 
 
 def serve(config=None, local=False, groupMember=0):
-    servers = []
+    server = None
     try:
         port = config.ports[groupMember]
         host = config.localHost if local else config.hosts[groupMember]
@@ -235,20 +235,19 @@ def serve(config=None, local=False, groupMember=0):
         database_pb2_grpc.add_databaseServicer_to_server(customerDBServicerGroupMember(groupMember, config.groupPorts, config.groupHosts), server)
         server.add_insecure_port('{}:{}'.format(host, port))
         server.start()
-        servers.append(server)
         print("Starting customer DB server on port {}".format(port))
         server.wait_for_termination()
     except Exception as err:
         print("err = ", err)
-        for server in servers:
-            server.stop(None).wait()
-            print("\nStopping customer DB server")
+    except:
+        server.stop(None).wait()
+        print("\nStopping customer DB server on port {}".format(config.ports[groupMember]))
 
 
 def startServers(config=None, local=False):
     threads = []
     try:
-        for groupMember in range(0, len(config.ports)):
+        for groupMember in range(len(config.ports)):
             thread = threading.Thread(target=serve, name="CustomerDB-{}".format(groupMember), args=[config, local, groupMember])
             thread.start()
             threads.append(thread)

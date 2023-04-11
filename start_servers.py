@@ -44,25 +44,25 @@ def main():
     threads = []
     try:
         config = getConfig()
-        # t1 = threading.Thread(target=startTransactionsDB, name="TransactionsDBServicer", args=[config])
-        # t1.start()
-        # threads.append(t1)
+        t1 = threading.Thread(target=startTransactionsDB, name="TransactionsDBServicer", args=[config])
+        t1.start()
+        threads.append(t1)
 
         t2 = threading.Thread(target=startCustomerDB, name="CustomerDBServicer", args=[config])
         t2.start()
         threads.append(t2)
 
-        # t3 = threading.Thread(target=startProductDB, name="ProductDBServicer", args=[config])
-        # t3.start()
-        # threads.append(t3)
-        #
-        # t4 = threading.Thread(target=startBuyerServer, name="BuyerServer", args=[config])
-        # t4.start()
-        # threads.append(t4)
-        #
-        # t5 = threading.Thread(target=startCustomerDB, name="SellerServer", args=[config])
-        # t5.start()
-        # threads.append(t5)
+        t3 = threading.Thread(target=startProductDB, name="ProductDBServicer", args=[config])
+        t3.start()
+        threads.append(t3)
+
+        t4 = threading.Thread(target=startBuyerServer, name="BuyerServer", args=[config])
+        t4.start()
+        threads.append(t4)
+
+        t5 = threading.Thread(target=startSellerServer, name="SellerServer", args=[config])
+        t5.start()
+        threads.append(t5)
     except:
         for thread in threads:
             thread.join()

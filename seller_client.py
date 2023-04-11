@@ -6,11 +6,13 @@ import pprint
 import string
 import numpy as np
 
+import start_servers as startup
+
 pp = pprint.PrettyPrinter()
 
 class SellerClient:
     # 35.222.138.219
-    def __init__(self, server_ip : str = '0.0.0.0:5000', debug: bool = False):
+    def __init__(self, server_ip: str, debug: bool = False):
         self.username = ""
         self.debug = debug
         self.base_url = 'http://' + server_ip
@@ -321,5 +323,7 @@ class SellerClient:
 
 
 if __name__ == "__main__":
-    seller = SellerClient()
+    config = startup.getConfig()
+    addr = "{}:{}".format(config.sellerServer.host, config.sellerServer.port)
+    seller = SellerClient(addr, True)
     seller.serve()

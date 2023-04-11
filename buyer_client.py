@@ -6,11 +6,14 @@ import pprint
 import numpy as np
 import string
 
+import start_servers as startup
+
 pp = pprint.PrettyPrinter()
+
 
 class BuyerClient:
     # 35.224.218.211
-    def __init__(self, server_ip : str = '0.0.0.0:5001', debug : bool = False):
+    def __init__(self, server_ip: str, debug: bool = False):
         self.username = ""
         self.cart = []
         self.debug = debug
@@ -366,5 +369,7 @@ class BuyerClient:
 
 
 if __name__ == "__main__":
-    buyer = BuyerClient()
+    config = startup.getConfig()
+    addr = "{}:{}".format(config.buyerServer.host, config.buyerServer.port)
+    buyer = BuyerClient(addr, True)
     buyer.serve()
