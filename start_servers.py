@@ -1,3 +1,4 @@
+import time
 from types import SimpleNamespace
 
 import os
@@ -47,6 +48,9 @@ def main():
         t1 = threading.Thread(target=startTransactionsDB, name="TransactionsDBServicer", args=[config])
         t1.start()
         threads.append(t1)
+
+        # transaction server takes longer to init before grpc servers set client connection
+        time.sleep(0.25)
 
         t2 = threading.Thread(target=startCustomerDB, name="CustomerDBServicer", args=[config])
         t2.start()

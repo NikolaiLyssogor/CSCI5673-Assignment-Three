@@ -69,7 +69,7 @@ class customerDBServicerGroupMember(database_pb2_grpc.databaseServicer):
         return True
 
     def buildRequestMessage(self, request):
-        reqMessage = rotatingSequencerRequestMessage(self.senderID, self.localSeq, self.globalSeq, request)
+        reqMessage = rotatingSequencerRequestMessage(self.senderID, self.localSeq, request)
         self.localSeq += 1
         return reqMessage
 
