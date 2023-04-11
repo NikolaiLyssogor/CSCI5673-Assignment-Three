@@ -1,3 +1,4 @@
+import queue
 import time
 
 import start_servers as startup
@@ -27,11 +28,15 @@ class customerDBServicerGroupMember(database_pb2_grpc.databaseServicer):
 
         self.db = customerDB()
         self.completedMessages = {}
+        self.seqMessages = {}
+        self.seqMessageQueue = queue.Queue()
         self.pendingMessages = {}
         self.pendingMessagesLock = threading.Lock()
 
-        thread = threading.Thread(target=self.receiveGroupMessages, name="groupMessages", args=[])
-        thread.start()
+        t1 = threading.Thread(target=self.receiveGroupMessages, name="recvGroupMessages", args=[])
+        t2 = threading.Thread(target=self.sendSeqMessage, name="sendSeqMessages", args=[])
+        t1.start()
+        t2.start()
 
     def executeClientRequest(self, request, context):
         reqMessage = self.buildRequestMessage(request)
@@ -44,8 +49,8 @@ class customerDBServicerGroupMember(database_pb2_grpc.databaseServicer):
         self.sendReqMessage(reqMessage)
 
         # all requests w/ req.globalSeq < self.globalReq are completed
-        # the majority of group members (3/5) have received all request AND sequence messages where req.globalSeq < self.globalSeq
-        pendingReqs = False
+        # TODO the majority of group members (3/5) have received all request AND sequence messages where req.globalSeq < self.globalSeq
+        pendingReqs = self.validatePendingRequests(reqMessage.requestID)
         while pendingReqs is False:
             pendingReqs = self.validatePendingRequests(reqMessage.requestID)
             time.sleep(0.5)
@@ -54,18 +59,20 @@ class customerDBServicerGroupMember(database_pb2_grpc.databaseServicer):
         return res
 
     def validatePendingRequests(self, currReqID):
-        # check each request has global seq #
-        allReqsCompleted = len(self.completedMessages) == self.globalSeq
-        for reqID, req in self.completedMessages.items():
-            req.globalSequence < self.globalSeq
+        # check each completed request has global seq #
+        completedReqs = len(self.completedMessages)
+        if completedReqs > 0:
+            allReqsCompleted = completedReqs == self.globalSeq + 1
+            for reqID, req in self.completedMessages.items():
+                prevReqHasPrevSeq = req.globalSequence
+                if prevReqHasPrevSeq is None:
+                    return False
 
-        # if found missing message retransmit message to sender
-        if allReqsCompleted is False:
-            reqMessage = self.findMissingMessage()
-            self.retransmitMessage(reqMessage)
-
-        # move current request to completed
-        # update global sequence
+            # if found missing req message retransmit message to sender
+            if allReqsCompleted is False:
+                reqMessageIDs = self.findMissingReqMessage()
+                self.retransmitMessage(reqMessageIDs)
+                return False
         return True
 
     def buildRequestMessage(self, request):
@@ -75,53 +82,96 @@ class customerDBServicerGroupMember(database_pb2_grpc.databaseServicer):
 
     def sendReqMessage(self, reqMessage):
         for addr in self.addrs:
-            self.socket.sendto(reqMessage, addr)
+            print("groupMember {} sent request message".format(self.senderID))
+            self.socket.sendto(reqMessage.toByteArray(), addr)
 
-    def sendSeqMessage(self, seqMessage):
+    def shouldSendSeqMessage(self):
+        # check if member should send seq message
+        # update globalSequence once seqMessage is successfully sent
+        assignedGlobalSeq = self.globalSeq if self.globalSeq == 0 else self.globalSeq + 1
+        return self.senderID == assignedGlobalSeq % (len(self.addrs) + 1)
+
+    def buildSequenceMessage(self, reqID):
+        assignedGlobalSeq = self.globalSeq + 1
+        # create seq message
+        return rotatingSequencerSequenceMessage(reqID, assignedGlobalSeq)
+
+    def readyToSendSeqMessage(self, seqMessage):
+        # has received all sequence messages w/ gSeq < k where k = seqMessage.globalSeq
+        # has received all req messages w/ gSeq < k
+        # for all req messages sent by member where self.senderID = seqMessage.requestID[0]
+        # reqMessage.requestID[1] < seqMessage.requestID[1]
+        return self.validatePendingRequests(seqMessage.requestID)
+
+    def sendSeqMessage(self):
         # has received all seq messages w/ global seq # < self.globalSeq
         # all req messages RECEIVED have a globalSeq assigned
         # all req messages SENT where member's id = req.sid && req.localSeq < self.localSeq have a globalSeq assigned
-        for addr in self.addrs:
-            self.socket.sendto(seqMessage, addr)
+        while True:
+            try:
+                seqMessage = self.seqMessageQueue.get(timeout=1)
+                readyToSend = False
+                while readyToSend is False:
+                    readyToSend = self.readyToSendSeqMessage(seqMessage)
 
-    def buildSequenceMessage(self, reqID, globalSeq):
-        # check if member should send
-        groupMember = self.globalSeq % len(self.po)
-        # create seq message
-        # send seq message
-        # process client request
-        return rotatingSequencerSequenceMessage(reqID, globalSeq)
+                # send sequence message
+                for addr in self.addrs:
+                    print("groupMember {} sent sequence message".format(self.senderID))
+                    self.socket.sendto(seqMessage.toByteArray(), addr)
+
+                # add sequence message
+                self.seqMessages[seqMessage.requestID] = seqMessage
+            except queue.Empty:
+                continue
 
     def receiveGroupMessages(self):
         # receive group Message
         while True:
             rlist, _, _ = select.select([self.socket], [], [], 1)
             if len(rlist) > 0:
-                print("received group message")
                 for tempSocket in rlist:
                     try:
-                        data, addr = tempSocket.recvfrom(1024)
-                        print("data = ", data)
-                        if data.type == "request":
+                        byteData, addr = tempSocket.recvfrom(1024)
+                        groupMessage = pickle.loads(byteData)
+                        if groupMessage.type == "request":
+                            print("groupMember {} received request message".format(self.senderID))
+                            # store pending request in shared resource
                             self.pendingMessagesLock.acquire()
-                            self.pendingMessages[data.requestID] = data
+                            self.pendingMessages[groupMessage.requestID] = groupMessage
                             self.pendingMessagesLock.release()
-                        else:
 
-                            self.completeMessage(data)
+                            # determine if sequence message should be sent
+                            if self.shouldSendSeqMessage():
+                                self.seqMessageQueue.put(self.buildSequenceMessage(groupMessage.requestID))
+                        elif groupMessage.type == "sequence":
+                            print("group member {} received sequence message".format(self.senderID))
+                            self.completeMessage(groupMessage)
+                        else:
+                            # TODO improve error
+                            raise Exception("BAD GROUP MESSAGE TYPE")
                     except socket.error as msg:
                         print(msg)
 
     def completeMessage(self, seqMessage):
         # get request message
+        reqMessage = None
         self.pendingMessagesLock.acquire()
-        reqMessage = self.pendingMessages.pop(seqMessage.requestID)
+        hasMessage = self.pendingMessages.keys().__contains__(seqMessage.requestID)
+        if hasMessage:
+            reqMessage = self.pendingMessages.pop(seqMessage.requestID)
+        else:
+            self.retransmitMessage([seqMessage.requestID])
+            print("ERROR message not found!")
         self.pendingMessagesLock.release()
 
         # process request
-        self.db.queryDatabase(reqMessage.clientRequest)
+        if reqMessage:
+            print("groupMember {} processing client request".format(self.senderID))
+            self.db.queryDatabase(reqMessage.clientReq)
 
         # update globalSeq
+        # TODO fix globalSequence update
+        #  consider using completed request count as globalSequence value
         if self.globalSeq < seqMessage.globalSequence:
             print("updating global sequence from {} to {}".format(self.globalSeq, seqMessage.globalSequence))
             self.globalSeq = seqMessage.globalSequence
@@ -130,25 +180,21 @@ class customerDBServicerGroupMember(database_pb2_grpc.databaseServicer):
         reqMessage.globalSequence = seqMessage.globalSequence
         self.completedMessages[reqMessage.requestID] = reqMessage
 
-    def findMissingMessage(self):
-        reqMessage = None
-        foundMessages = [self.completedMessages.keys()]
-        self.pendingMessagesLock.acquire()
-        # missing a sequence message
-        for reqID, req in self.pendingMessages.items():
-            if req.globalSequence < self.globalSeq:
-                reqMessage = req
-            foundMessages.append(reqID)
-        self.pendingMessagesLock.release()
-
-        # TODO missing a request message
-        if reqMessage is None:
+    def findMissingReqMessage(self):
+        missingMessageIDs = []
+        globalSeqs = range(0, self.globalSeq)
+        messageGlobalSeqs = [v.globalSequence for v in self.completedMessages.values()]
+        missingSeqs = [x for x in globalSeqs if x not in messageGlobalSeqs]
+        if len(missingSeqs) > 0:
             print("Missing a message!")
-        return reqMessage
+            missingMessageIDs = [x.requestID for x in self.seqMessages if x.globalSequence not in missingSeqs]
+        return missingMessageIDs
 
-    def retransmitMessage(self, reqMessage):
+    def retransmitMessage(self, groupMessages):
         # retransmit message to message sender
-        self.socket.sendto(reqMessage, self.addrs[reqMessage.requestID[0]])
+        for msg in groupMessages:
+            print("groupMember {} retransmitting groupMessage: {}".format(self.senderID, msg.requestID))
+            self.socket.sendto(msg, self.addrs[msg.requestID[0]])
 
 
 class rotatingSequencerRequestMessage:
@@ -159,12 +205,17 @@ class rotatingSequencerRequestMessage:
         self.type = "request"
         self.receivedCount = 0
 
+    def toByteArray(self):
+        return pickle.dumps(self)
 
 class rotatingSequencerSequenceMessage:
     def __init__(self, reqID, globalSeq):
         self.requestID = reqID
         self.globalSeq = globalSeq
         self.type = "sequence"
+
+    def toByteArray(self):
+        return pickle.dumps(self)
 
 
 class customerDB:
