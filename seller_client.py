@@ -10,7 +10,7 @@ pp = pprint.PrettyPrinter()
 
 class SellerClient:
     # 35.222.138.219
-    def __init__(self, server_ip : str = '35.222.138.219:5000', debug: bool = False):
+    def __init__(self, server_ip : str = '0.0.0.0:5000', debug: bool = False):
         self.username = ""
         self.debug = debug
         self.base_url = 'http://' + server_ip

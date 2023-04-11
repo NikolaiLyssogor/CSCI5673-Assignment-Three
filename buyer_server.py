@@ -6,10 +6,11 @@ import database_pb2_grpc
 
 import pickle
 import json
-import random
 import time
 from flask import Flask, request, Response
 from zeep import Client
+
+import random
 
 
 # Define Flask service
@@ -19,16 +20,18 @@ n_ops = 0
 
 def setConfig(config):
     # Stub for communicating with customer database
-    global customer_channel
-    global customer_stub
+    global customer_stubs
     # Stub for communicating with product database
-    global product_channel
     global product_stub
     # Stub for communicating with the SOAP transactions database
     global soap_client
 
-    customer_channel = grpc.insecure_channel("{}:{}".format(config.customerDB.host, config.customerDB.port))
-    customer_stub = database_pb2_grpc.databaseStub(customer_channel)
+    for customerServer in config.customerDB.ports:
+        host = config.customerDB.hosts[customerServer]
+        port = config.customerDB.ports[customerServer]
+        customer_channel = grpc.insecure_channel("{}:{}".format(host, port))
+        customer_stub = database_pb2_grpc.databaseStub(customer_channel)
+        customer_stubs.append(customer_stub)
     product_channel = grpc.insecure_channel("{}:{}".format(config.productDB.host, config.productDB.port))
     product_stub = database_pb2_grpc.databaseStub(product_channel)
     soap_client = Client('http://{}:{}/?wsdl'.format(config.transactionsDB.addr, config.transactionsDB.port))
@@ -416,7 +419,8 @@ def query_database(sql: str, db: str):
         if db == 'product':
             stub = product_stub
         elif db == 'customer':
-            stub = customer_stub
+            # TODO handle failure
+            stub = random.choice(customer_stubs)
 
         query = database_pb2.databaseRequest(query=sql)
         db_response = stub.queryDatabase(request=query)

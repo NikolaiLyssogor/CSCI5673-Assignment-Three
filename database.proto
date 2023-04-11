@@ -5,6 +5,7 @@ syntax = "proto3";
 service database {
     // Query the database
     rpc queryDatabase (databaseRequest) returns (databaseResponse) {}
+    rpc executeClientRequest (databaseRequest) returns (databaseResponse) {}
 }
 
 message databaseRequest {
