@@ -21,11 +21,11 @@ def getConfig():
 
 
 def startBuyerServer(config):
-    buyer_server.serve(config.buyerServer)
+    buyer_server.serve(config)
 
 
 def startSellerServer(config):
-    seller_server.serve(config.sellerServer)
+    seller_server.serve(config)
 
 
 def startCustomerDB(config):

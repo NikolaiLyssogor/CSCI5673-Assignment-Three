@@ -33,7 +33,7 @@ class customerDBServicerGroupMember(database_pb2_grpc.databaseServicer):
         thread = threading.Thread(target=self.receiveGroupMessages, name="groupMessages", args=[])
         thread.start()
 
-    def executeClientRequest(self, request):
+    def executeClientRequest(self, request, context):
         reqMessage = self.buildRequestMessage(request)
         # store pending request
         self.pendingMessagesLock.acquire()

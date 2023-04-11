@@ -18,6 +18,10 @@ app = Flask(__name__)
 # Used for tracking throughput
 n_ops = 0
 
+customer_stubs = []
+product_stub: database_pb2_grpc.databaseStub
+soap_client: Client
+
 
 def setConfig(config):
     # Stub for communicating with customer database
@@ -27,7 +31,7 @@ def setConfig(config):
     # Stub for communicating with the SOAP transactions database
     global soap_client
 
-    for customerServer in config.customerDB.ports:
+    for customerServer in range(len(config.customerDB.ports)):
         host = config.customerDB.hosts[customerServer]
         port = config.customerDB.ports[customerServer]
         customer_channel = grpc.insecure_channel("{}:{}".format(host, port))
@@ -442,9 +446,8 @@ def get_server_info():
     return Response(response=response, status=200)
 
 def serve(config=None):
-    app.run(host=config.host, port=config.port, debug=True, use_reloader=False)
+    setConfig(config)
+    app.run(host=config.buyerServer.host, port=config.buyerServer.port, debug=True, use_reloader=False)
 
 if __name__ == "__main__":
-    config = startup.getConfig()
-    setConfig(config)
-    serve(config.buyerServer)
+    serve(startup.getConfig())
