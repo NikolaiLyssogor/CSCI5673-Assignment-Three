@@ -351,9 +351,22 @@ class productDBServicer(database_pb2_grpc.databaseServicer):
 
         # TODO: Execute SQL queries here
         for command in commands:
-            raise NotImplementedError
+            self.update_state_machine(command)
         
         return last_index
+    
+    def update_state_machine(self, command):
+        """
+        Executes CUD queries once their corresponding log has been replicated.
+        """
+        match = re.match(r'^QUERY\s+(.+)$', command, re.IGNORECASE)
+
+        if match:
+            query = match.group(1)
+            with sqlite3.connect(self.db_name) as con:
+                cur = con.cursor()
+                cur.execute(query)
+                con.commit()
     
     def process_append_reply(self, server, term, success, index):
         print(f"Processing append reply from {server} {term}.....")
