@@ -7,7 +7,7 @@ import database_pb2
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 import pickle
-import datetime
+import json
 import time
 from pathlib import Path
 import random
@@ -72,28 +72,7 @@ class productDBServicer(database_pb2_grpc.databaseServicer):
             """)
             con.commit()
 
-            print("Ready.....")
-
-    def queryDatabase(self, request, context):
-        """
-        - When receiving a request, do this if node is the leader, otherwise forward to leader.
-        """
-        with threading.Lock:
-            with sqlite3.connect(self.db_name) as con:
-                try:
-                    cur = con.cursor()
-                    db_resp = cur.execute(request.query)
-                    if 'SELECT' in request.query:
-                        # R in CRUD
-                        serv_resp = pickle.dumps(db_resp.fetchall())
-                    else:
-                        # CUD in CRUD
-                        con.commit()
-                        serv_resp = pickle.dumps({'status': 'Success: Operation completed'})
-                except:
-                    serv_resp = pickle.dumps({'status': 'Error: Bad query or unable to connect'})
-                finally:
-                    return database_pb2.databaseResponse(db_response=serv_resp)        
+            print("Ready.....")       
 
     def init(self):
         self.set_election_timeout()
@@ -252,7 +231,6 @@ class productDBServicer(database_pb2_grpc.databaseServicer):
                 self.append_entries()
 
                 # Commit entry after it has been replicated
-                # TODO: Execute the SQL query here?
                 last_index, _ = self.commit_log.get_last_index_term()
                 self.commit_index = last_index
 
@@ -392,18 +370,145 @@ class productDBServicer(database_pb2_grpc.databaseServicer):
                 self.next_indices[server] = max(0, self.next_indices[server]-1)
                 self.send_append_entries_request(server)
 
+    def queryDatabase(self, request, context):
+        """
+        gRPC route that handles connections from the customer server or product server.
+
+        If the database server is the leader: Commit to log, wait for replication, then
+        execute query and return to user. 
+
+        If the database server is not the leader: Send the query to the leader. Leader
+        commits to log, waits for replication, then executes the query. If query is CUD,
+        leader returns response/failure. If query is read, leader returns json response
+        from SQLite
+        """
+        if self.state == 'LEADER':
+
+            # Request is read, don't need to replicate
+            if 'SELECT' in request.query:
+                try:
+                    with sqlite3.connect(self.db_name) as con:
+                        cur = con.cursor()
+                        db_resp = cur.execute(request.query)
+                        serv_resp = pickle.dumps(db_resp.fetchall())
+                except:
+                    serv_resp = pickle.dumps({'status': 'Error: Bad query or unable to connect'})
+                finally:
+                    return database_pb2.databaseResponse(db_response=serv_resp) 
+            
+            # Request is CUD: Log, replicate, execute
+            else:
+                # Log the query
+                query = request.query.replace('\n', ' ')
+                last_index, _ = self.commit_log.log(
+                    self.current_term, query
+                )
+
+                # Wait for the log to be replicated
+                while True:
+                    if last_index == self.commit_index:
+                        break
+
+                # Execute the query
+                try:
+                    with sqlite3.connect(self.db_name) as con:
+                        cur = con.cursor()
+                        db_resp = cur.execute(request.query)
+                        con.commit()
+                        serv_resp = pickle.dumps({'status': 'Success: Operation completed'})
+                except:
+                    serv_resp = pickle.dumps({'status': 'Error: Bad query or unable to connect'})
+                finally:
+                    return database_pb2.databaseResponse(db_response=serv_resp) 
+        
+        else:
+            while True:
+                if 'SELECT' in request.query:
+                    query = request.query.replace('\n', ' ')
+                    msg = f"QUERY {query}"
+                    resp = raft_utils.send_and_recv_no_retry(
+                        msg,
+                        self.conns[self.leader_id][0],
+                        self.conns[self.leader_id][1]
+                    )
+
+                    if 'error' in resp:
+                        serv_resp = pickle.dumps({'status': 'Error: Bad query or unable to connect'})
+                    else:
+                        serv_resp = pickle.dumps(json.loads(resp))
+
+                    return database_pb2.databaseResponse(db_response=serv_resp)
+                
+                # Send query message to the leader
+                else:
+                    query = request.query.replace('\n', ' ')
+                    msg = f"QUERY {query}"
+                    resp = raft_utils.send_and_recv_no_retry(
+                        msg,
+                        self.conns[self.leader_id][0],
+                        self.conns[self.leader_id][1],
+                        timeout = self.rpc_period_ms
+                    )
+
+                    if 'success' in resp:
+                        serv_resp = pickle.dumps({'status': 'Success: Operation completed'})
+                    else:
+                       serv_resp = pickle.dumps({'status': 'Error: Bad query or unable to connect'})
+
+                    return database_pb2.databaseResponse(db_response=serv_resp)
+
+
     def handle_commands(self, msg, conn):
         """
         Handles all commands passed from one replica to another.
         """
-        set_ht = re.match('^SET ([^\s]+) ([^\s]+) ([0-9]+)$', msg)
-        get_ht = re.match('^GET ([^\s]+) ([0-9]+)$', msg)
+        query_req = re.match(r'^QUERY\s+(.+)$', msg, re.IGNORECASE)
         vote_req = re.match(
             '^VOTE-REQ ([0-9]+) ([0-9\-]+) ([0-9\-]+) ([0-9\-]+)$', msg)
         append_req = re.match(
             '^APPEND-REQ ([0-9]+) ([0-9\-]+) ([0-9\-]+) ([0-9\-]+) (\[.*?\]) ([0-9\-]+)$', msg)
 
-        if vote_req:
+        if query_req:
+            # NOTE: Don't need to check for leader because this only gets called
+            # when a follower passes the query to the leader
+            try:
+                query = query_req.group(1)
+
+                while True:
+
+                    # Don't need to replicate read logs
+                    if 'SELECT' in query:
+                        try:
+                            with sqlite3.connect(self.db_name) as con:
+                                cur = con.cursor()
+                                db_resp = cur.execute(query)
+                                output = json.dumps(db_resp.fetchall())
+                        except:
+                            output = 'error'
+
+                    else:
+                        last_index, _ = self.commit_log.log(
+                            self.current_term, msg
+                        )
+
+                        # Wait for log replication (happens in other thread)
+                        while True:
+                            if last_index == self.commit_index:
+                                break
+
+                        # Update state machine
+                        try:
+                            with sqlite3.connect(self.db_name) as con:
+                                cur = con.cursor()
+                                cur.execute(query)
+                                con.commit()
+                                output = 'success'
+                        except:
+                            output = 'error'
+            except Exception as e:
+                traceback.print_exc(limit=1000)
+
+        elif vote_req:
             try:
                 server, curr_term, last_term, last_idx = vote_req.groups()
                 server, curr_term = int(server), int(curr_term)
@@ -414,6 +519,7 @@ class productDBServicer(database_pb2_grpc.databaseServicer):
                 )
             except Exception as e:
                 traceback.print_exc(limit=1000)
+
         elif append_req:
             try:
                 server, curr_term, prev_idx, prev_term, logs, commit_idx = append_req.groups()
@@ -426,6 +532,7 @@ class productDBServicer(database_pb2_grpc.databaseServicer):
                 )
             except Exception as e:
                 traceback.print_exc(limit=1000)
+
         else:
             print("Hello1 - " + msg + " - Hello2")
             output = "Error: Invalid command"

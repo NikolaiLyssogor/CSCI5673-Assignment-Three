@@ -3,6 +3,7 @@ import socket
 import select
 import traceback
 import datetime
+import
 
 def run_thread(fn, args):
     my_thread = threading.Thread(target=fn, args=args)
@@ -36,9 +37,21 @@ def send_and_recv_no_retry(msg, ip, port, timeout=-1):
         if timeout > 0:
             ready = select.select([conn], [], [], timeout)
             if ready[0]:
-                resp = conn.recv(2048).decode()
+                data = b''
+                while True:
+                    chunk = conn.recv(4096)
+                    if not chunk:
+                        break
+                    data += chunk
         else:
-            resp = conn.recv(2048).decode()
+            data = b''
+            while True:
+                chunk = conn.recv(4096)
+                if not chunk:
+                    break
+                data += chunk
+
+        resp = None if data == b'' else data.decode()
                 
     except Exception as e:
         traceback.print_exc(limit=1000)
