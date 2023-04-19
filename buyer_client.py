@@ -370,20 +370,20 @@ class BuyerClient:
         average_response_time = sum(self.response_times) / len(self.response_times)
         return average_response_time, experiment_time, n_operations
 
-    def testEach(self, method):
-        start = time.time()
+    def testEach(self, method, delay=0.1, count=10):
+        self.create_account()
+        time.sleep(delay)
+        self.login()
+        time.sleep(delay)
+        times = []
 
-        method()
+        for _ in range(count):
+            start = time.time()
+            method()
+            res_time = time.time() - start
+            times.append(res_time)
 
-        # Get server operations and time
-        response = requests.get(self.get_addr() + '/getServerInfo')
-        response_text = json.loads(response.text)
-        experiment_time = response_text['time'] - start
-        n_operations = response_text['n_ops']
-
-        # Compute the average response time
-        average_response_time = sum(self.response_times) / len(self.response_times)
-        return average_response_time, experiment_time, n_operations
+        return sum(times) / len(times)
 
 
 if __name__ == "__main__":

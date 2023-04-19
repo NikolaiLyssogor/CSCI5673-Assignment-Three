@@ -433,7 +433,7 @@ def query_database(sql: str, db: str):
     elif db == 'product':
         query = database_pb2.databaseRequest(query=sql)
         stub = random.choice(product_stubs)
-        db_response = stub.executeClientRequest(request=query)
+        db_response = stub.queryDatabase(request=query)
         return pickle.loads(db_response.db_response)
     elif db == 'customer':
         query = database_pb2.databaseRequest(query=sql)
