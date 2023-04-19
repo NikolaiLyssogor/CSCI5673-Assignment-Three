@@ -7,6 +7,7 @@ import database_pb2_grpc
 import pickle
 import json
 import time
+import threading
 from flask import Flask, request, Response
 from zeep import Client
 
@@ -19,7 +20,7 @@ app = Flask(__name__)
 n_ops = 0
 
 customer_stubs = []
-product_stub: database_pb2_grpc.databaseStub
+product_stubs = []
 soap_client: Client
 
 
@@ -31,14 +32,23 @@ def setConfig(config):
     # Stub for communicating with the SOAP transactions database
     global soap_client
 
-    for customerServer in range(len(config.customerDB.ports)):
-        host = config.customerDB.hosts[customerServer]
-        port = config.customerDB.ports[customerServer]
+    for server_idx in range(len(config.customerDB.ports)):
+        # Add customer db stubs
+        host = config.customerDB.hosts[server_idx]
+        port = config.customerDB.ports[server_idx]
         customer_channel = grpc.insecure_channel("{}:{}".format(host, port))
         customer_stub = database_pb2_grpc.databaseStub(customer_channel)
         customer_stubs.append(customer_stub)
-    product_channel = grpc.insecure_channel("{}:{}".format(config.productDB.host, config.productDB.port))
-    product_stub = database_pb2_grpc.databaseStub(product_channel)
+
+        # Add product db stubs
+        host = config.productDB.hosts[server_idx]
+        port = config.productDB.ports[server_idx]
+        product_channel = grpc.insecure_channel("{}:{}".format(host, port))
+        product_stub = database_pb2_grpc.databaseStub(product_channel)
+        product_stubs.append(product_stub)
+
+    # product_channel = grpc.insecure_channel("{}:{}".format(config.productDB.host, config.productDB.port))
+    # product_stub = database_pb2_grpc.databaseStub(product_channel)
     soap_client = Client('http://{}:{}/?wsdl'.format(config.transactionsDB.addr, config.transactionsDB.port))
 
 
@@ -422,7 +432,8 @@ def query_database(sql: str, db: str):
         return pickle.loads(db_response)
     elif db == 'product':
         query = database_pb2.databaseRequest(query=sql)
-        db_response = product_stub.queryDatabase(request=query)
+        stub = random.choice(product_stubs)
+        db_response = stub.executeClientRequest(request=query)
         return pickle.loads(db_response.db_response)
     elif db == 'customer':
         query = database_pb2.databaseRequest(query=sql)
@@ -447,7 +458,21 @@ def get_server_info():
 
 def serve(config=None):
     setConfig(config)
-    app.run(host=config.buyerServer.host, port=config.buyerServer.port, debug=True, use_reloader=False)
+
+    threads = []
+    try:
+        for server_idx in range(len(config.buyerServer.ports)):
+            port = config.buyerServer.ports[server_idx]
+            thread = threading.Thread(target=app.run, name=f"buyer server {server_idx}", args=['0.0.0.0', port])
+            thread.start()
+            threads.append(thread)
+    except Exception as e:
+        print(e)
+        for thread in threads:
+            thread.join()
+
+    # app.run(host=config.sellerServer.host, port=config.sellerServer.port, debug=True, use_reloader=False)
+
 
 if __name__ == "__main__":
     serve(startup.getConfig())
