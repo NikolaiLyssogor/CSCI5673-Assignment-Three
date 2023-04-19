@@ -13,11 +13,11 @@ pp = pprint.PrettyPrinter()
 
 class BuyerClient:
     # 35.224.218.211
-    def __init__(self, server_ip: str, debug: bool = False):
+    def __init__(self, addrs, debug: bool = False):
         self.username = ""
         self.cart = []
         self.debug = debug
-        self.base_url = 'http://' + server_ip
+        self.addrs = addrs
         self.headers = {'content-type': 'application/json'}
 
         self.routes = {
@@ -39,6 +39,9 @@ class BuyerClient:
         self.response_times = []
         self.username = ''.join(random.choice(string.ascii_lowercase) for _ in range(10))
         self.random_password = ''.join(random.choice(string.ascii_lowercase) for _ in range(10))
+    
+    def get_addr(self):
+        return "http://" + random.choice(self.addrs)
 
     def create_account(self):
         if self.debug:
@@ -55,7 +58,7 @@ class BuyerClient:
         })
 
         start = time.time()
-        url = self.base_url + '/createAccount'
+        url = self.get_addr() + '/createAccount'
         response = requests.post(url, headers=self.headers, data=data)
         end = time.time()
         self.response_times.append(end-start)
@@ -81,7 +84,7 @@ class BuyerClient:
         })
 
         start = time.time()
-        url = self.base_url + '/login'
+        url = self.get_addr() + '/login'
         response = requests.post(url, headers=self.headers, data=data)
         end = time.time()
         self.response_times.append(end-start)
@@ -95,7 +98,7 @@ class BuyerClient:
     def logout(self):
         if self.username:
             data = json.dumps({'username': self.username})
-            url = self.base_url + '/logout'
+            url = self.get_addr() + '/logout'
 
             start = time.time()
             response = requests.post(url, headers=self.headers, data=data)
@@ -113,7 +116,7 @@ class BuyerClient:
     #     Calls the server to check if the user is logged in.
     #     """
     #     data = json.dumps({'username': self.username})
-    #     url = self.base_url + '/checkIfLoggedIn'
+    #     url = self.get_addr() + '/checkIfLoggedIn'
 
     #     start = time.time()
     #     response = requests.post(url, headers=self.headers, data=data)
@@ -140,7 +143,7 @@ class BuyerClient:
             'category': category,
             'keywords': keywords
         })
-        url = self.base_url + '/search'
+        url = self.get_addr() + '/search'
 
         start = time.time()
         response = requests.post(url, headers=self.headers, data=data)
@@ -172,7 +175,7 @@ class BuyerClient:
                 'item_id': item_id,
                 'quantity': quantity
             })
-        url = self.base_url + '/addItemsToCart'
+        url = self.get_addr() + '/addItemsToCart'
 
         start = time.time()
         response = requests.post(url, headers=self.headers, data=data)
@@ -228,7 +231,7 @@ class BuyerClient:
         else:
             seller_id = str(random.choice(range(1, 11)))
 
-        url = self.base_url + '/getSellerRatingByID/' + seller_id
+        url = self.get_addr() + '/getSellerRatingByID/' + seller_id
 
         start = time.time()
         response = requests.get(url)
@@ -266,7 +269,7 @@ class BuyerClient:
             'items': [(item['id'], item['quantity'])
                         for item in self.cart]
         })
-        url = self.base_url + '/makePurchase'
+        url = self.get_addr() + '/makePurchase'
 
         start = time.time()
         response = requests.post(url, headers=self.headers, data=data)
@@ -280,7 +283,7 @@ class BuyerClient:
             self.clear_cart()
 
     def get_purchase_history(self):
-        url = self.base_url + '/getPurchaseHistory/' + self.username
+        url = self.get_addr() + '/getPurchaseHistory/' + self.username
 
         start = time.time()
         response = requests.get(url)
@@ -358,7 +361,22 @@ class BuyerClient:
         self.logout()
 
         # Get server operations and time
-        response = requests.get(self.base_url + '/getServerInfo')
+        response = requests.get(self.get_addr() + '/getServerInfo')
+        response_text = json.loads(response.text)
+        experiment_time = response_text['time'] - start
+        n_operations = response_text['n_ops']
+
+        # Compute the average response time
+        average_response_time = sum(self.response_times) / len(self.response_times)
+        return average_response_time, experiment_time, n_operations
+
+    def testEach(self, method):
+        start = time.time()
+
+        method()
+
+        # Get server operations and time
+        response = requests.get(self.get_addr() + '/getServerInfo')
         response_text = json.loads(response.text)
         experiment_time = response_text['time'] - start
         n_operations = response_text['n_ops']
@@ -370,6 +388,6 @@ class BuyerClient:
 
 if __name__ == "__main__":
     config = startup.getConfig()
-    addr = "{}:{}".format(config.buyerServer.host, config.buyerServer.port)
-    buyer = BuyerClient(addr, True)
+    addrs =[ip + ':' + str(port) for ip, port in zip(config.buyerServer.hosts, config.buyerServer.ports)]
+    buyer = BuyerClient(addrs, True)
     buyer.serve()

@@ -26,7 +26,7 @@ class customerDBServicerGroupMember(database_pb2_grpc.databaseServicer):
         self.addrs = list(zip(hosts[:], ports[:]))
         self.addrs.remove((hosts[sID], ports[sID]))
 
-        self.db = customerDB()
+        self.db = customerDB("customers_{}.db".format(ports[sID]))
         self.completedMessages = {}
         self.seqMessages = {}
         self.seqMessageQueue = queue.Queue()
@@ -218,12 +218,13 @@ class rotatingSequencerSequenceMessage:
 
 
 class customerDB:
-    def __init__(self):
+    def __init__(self, db="customers.db"):
         """
         Reinitializes the tables, creates the cursor
         and connection objects.
         """
-        with sqlite3.connect('customers.db') as con:
+        self.db_name = db
+        with sqlite3.connect(self.db_name) as con:
             cur = con.cursor()
 
             # Create sellers table

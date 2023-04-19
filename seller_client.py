@@ -12,10 +12,10 @@ pp = pprint.PrettyPrinter()
 
 class SellerClient:
     # 35.222.138.219
-    def __init__(self, server_ip: str, debug: bool = False):
+    def __init__(self, addrs, debug: bool = False):
         self.username = ""
         self.debug = debug
-        self.base_url = 'http://' + server_ip
+        self.addrs = addrs
         self.headers = {'content-type': 'application/json'}
 
         self.routes = {
@@ -35,6 +35,9 @@ class SellerClient:
         self.username = ''.join(random.choice(string.ascii_lowercase) for _ in range(10))
         self.random_password = ''.join(random.choice(string.ascii_lowercase) for _ in range(10))
 
+    def get_addr(self):
+        return "http://" + random.choice(self.addrs)
+
     def create_account(self):
         if self.debug:
             # Get user input
@@ -50,7 +53,7 @@ class SellerClient:
         })
 
         start = time.time()
-        url = self.base_url + '/createAccount'
+        url = self.get_addr() + '/createAccount'
         response = requests.post(url, headers=self.headers, data=data)
         end = time.time()
 
@@ -78,7 +81,7 @@ class SellerClient:
         })
 
         start = time.time()
-        url = self.base_url + '/login'
+        url = self.get_addr() + '/login'
         response = requests.post(url, headers=self.headers, data=data)
         end = time.time()
 
@@ -94,7 +97,7 @@ class SellerClient:
     def logout(self):
         if self.username:
             data = json.dumps({'username': self.username})
-            url = self.base_url + '/logout'
+            url = self.get_addr() + '/logout'
 
             start = time.time()
             response = requests.post(url, headers=self.headers, data=data)
@@ -112,7 +115,7 @@ class SellerClient:
     #     Calls the server to check if the user is logged in.
     #     """
     #     data = json.dumps({'username': self.username})
-    #     url = self.base_url + '/checkIfLoggedIn'
+    #     url = self.get_addr() + '/checkIfLoggedIn'
 
     #     start = time.time()
     #     response = requests.post(url, headers=self.headers, data=data)
@@ -123,7 +126,7 @@ class SellerClient:
     #     return response_text['is_logged_in']
 
     def get_seller_rating(self):
-        url = self.base_url + f'/getSellerRating/{self.username}'
+        url = self.get_addr() + f'/getSellerRating/{self.username}'
 
         start = time.time()
         response = requests.get(url)
@@ -175,7 +178,7 @@ class SellerClient:
             }
 
         data = json.dumps(item)
-        url = self.base_url + '/sellItem'
+        url = self.get_addr() + '/sellItem'
 
         start = time.time()
         response = requests.post(url, data=data, headers=self.headers)
@@ -186,7 +189,7 @@ class SellerClient:
         print('\n', response_text['status'])
 
     def list_items(self):
-        url = self.base_url + f'/listItems/{self.username}'
+        url = self.get_addr() + f'/listItems/{self.username}'
 
         start = time.time()
         response = requests.get(url)
@@ -218,7 +221,7 @@ class SellerClient:
             'item_id': id,
             'quantity': int(quantity)
         })
-        url = self.base_url + '/deleteItem'
+        url = self.get_addr() + '/deleteItem'
 
         start = time.time()
         response = requests.put(url, headers=self.headers, data=data)
@@ -241,7 +244,7 @@ class SellerClient:
             'item_id': id,
             'new_price': new_price
         })
-        url = self.base_url + '/changeItemPrice'
+        url = self.get_addr() + '/changeItemPrice'
 
         start = time.time()
         response = requests.put(url, headers=self.headers, data=data)
@@ -312,7 +315,7 @@ class SellerClient:
         self.logout()
 
         # Get server operations and time
-        response = requests.get(self.base_url + '/getServerInfo')
+        response = requests.get(self.get_addr() + '/getServerInfo')
         response_text = json.loads(response.text)
         experiment_time = response_text['time'] - start
         n_operations = response_text['n_ops']
@@ -321,9 +324,23 @@ class SellerClient:
         average_response_time = sum(self.response_times) / len(self.response_times)
         return average_response_time, experiment_time, n_operations
 
+    def testEach(self, method):
+        start = time.time()
+
+        method()
+
+        # Get server operations and time
+        response = requests.get(self.get_addr() + '/getServerInfo')
+        response_text = json.loads(response.text)
+        experiment_time = response_text['time'] - start
+        n_operations = response_text['n_ops']
+
+        # Compute the average response time
+        average_response_time = sum(self.response_times) / len(self.response_times)
+        return average_response_time, experiment_time, n_operations
 
 if __name__ == "__main__":
     config = startup.getConfig()
-    addr = "{}:{}".format(config.sellerServer.host, config.sellerServer.port)
-    seller = SellerClient(addr, True)
+    addrs =[ip + ':' + str(port) for ip, port in zip(config.sellerServer.hosts, config.sellerServer.ports)]
+    seller = SellerClient(addrs, True)
     seller.serve()
