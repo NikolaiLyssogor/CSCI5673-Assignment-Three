@@ -170,7 +170,6 @@ class customerDBServicerGroupMember(database_pb2_grpc.databaseServicer):
             self.db.queryDatabase(reqMessage.clientReq)
 
         # update globalSeq
-        # TODO fix globalSequence update
         #  consider using completed request count as globalSequence value
         if self.globalSeq < seqMessage.globalSequence:
             print("updating global sequence from {} to {}".format(self.globalSeq, seqMessage.globalSequence))

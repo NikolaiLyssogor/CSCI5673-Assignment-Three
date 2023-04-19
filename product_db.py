@@ -24,7 +24,7 @@ import raft_utils
 
 class productDBServicer(database_pb2_grpc.databaseServicer):
 
-    def __init__(self, ip: str, port: int, replicas: list[str]):
+    def __init__(self, ip, port, replicas):
         self.ip = ip
         self.port = port
         self.commit_log = raft_utils.CommitLog(f'commit-log-{self.ip}-{self.port}')
@@ -123,7 +123,7 @@ class productDBServicer(database_pb2_grpc.databaseServicer):
         self. votes.add(self.replica_index)
 
         # Send vote requests in parallel
-        thread = []
+        threads = []
         for i in range(len(self.replicas)):
             if i != self.replica_index:
                 t = raft_utils.run_thread(fn=self.request_vote, args=(i, ))
@@ -632,4 +632,4 @@ def startServers(config=None, local=False):
 
 
 if __name__ == "__main__":
-    startServers(startup.getConfig().productDB, local=True)
+    startServers(startup.getConfig().productDB, True)
