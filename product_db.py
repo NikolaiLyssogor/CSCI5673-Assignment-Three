@@ -5,7 +5,7 @@ import database_pb2
 
 # Other dependencies
 import sqlite3
-from concurrent.futures import ThreadPoolExecutor
+from concurrent import futures
 import pickle
 import json
 import time
@@ -16,7 +16,11 @@ import re
 import queue
 import socket
 import traceback
+
+# Local files
+import start_servers as startup
 import raft_utils
+
 
 class productDBServicer(database_pb2_grpc.databaseServicer):
 
@@ -593,10 +597,39 @@ class productDBServicer(database_pb2_grpc.databaseServicer):
                 print("Error accepting connection.....")
 
 
+def serve(config=None, local=False, groupMember=0):
+    server = None
+    replicas = [ip + ':' + str(port) for ip, port in zip(config.groupHosts, config.groupPorts)]
+
+    try:
+        port = config.ports[groupMember]
+        host = config.localHost if local else config.hosts[groupMember]
+
+        # initialize customer DB server
+        server = grpc.server(futures.ThreadPoolExecutor(max_workers=config.maxThreads))
+        database_pb2_grpc.add_databaseServicer_to_server(productDBServicer('0.0.0.0', port, replicas), server)
+        server.add_insecure_port(f'{host}:{port}')
+        server.start()
+        print(f"Starting product DB server on port {port}")
+        server.wait_for_termination()
+    except Exception as err:
+        print("err = ", err)
+    except:
+        server.stop(None).wait()
+        print(f"\nStopping product DB server on port {config.ports[groupMember]}")
+
+
+def startServers(config=None, local=False):
+    threads = []
+    try:
+        for groupMember in range(len(config.ports)):
+            thread = threading.Thread(target=serve, name=f"ProductDB-{groupMember}", args=[config, local, groupMember])
+            thread.start()
+            threads.append(thread)
+    except:
+        for thread in threads:
+            thread.join()
+
+
 if __name__ == "__main__":
-    # Start the server
-    server = grpc.server(ThreadPoolExecutor(max_workers=10))
-    database_pb2_grpc.add_databaseServicer_to_server(productDBServicer(), server)
-    server.add_insecure_port('[::]:50052')
-    server.start()
-    server.wait_for_termination()
+    startServers(startup.getConfig().productDB, local=True)
