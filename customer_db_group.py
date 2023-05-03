@@ -171,12 +171,12 @@ class customerDBServicerGroupMember(database_pb2_grpc.databaseServicer):
 
         # update globalSeq
         #  consider using completed request count as globalSequence value
-        if self.globalSeq < seqMessage.globalSequence:
-            print("updating global sequence from {} to {}".format(self.globalSeq, seqMessage.globalSequence))
-            self.globalSeq = seqMessage.globalSequence
+        if self.globalSeq < seqMessage.globalSeq and self.globalSeq+1 == seqMessage.globalSeq:
+            print("updating global sequence from {} to {}".format(self.globalSeq, seqMessage.globalSeq))
+            self.globalSeq = seqMessage.globalSeq
 
         # move message from pending to completed
-        reqMessage.globalSequence = seqMessage.globalSequence
+        reqMessage.globalSequence = seqMessage.globalSeq
         self.completedMessages[reqMessage.requestID] = reqMessage
 
     def findMissingReqMessage(self):
@@ -192,7 +192,7 @@ class customerDBServicerGroupMember(database_pb2_grpc.databaseServicer):
     def retransmitMessage(self, groupMessages):
         # retransmit message to message sender
         for msg in groupMessages:
-            print("groupMember {} retransmitting groupMessage: {}".format(self.senderID, msg.requestID))
+            print("groupMember {} retransmitting groupMessage: {}".format(self.senderID, msg))
             self.socket.sendto(msg, self.addrs[msg.requestID[0]])
 
 
